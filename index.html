@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>複製文靜思語-inaff</title>
+  <style>
+    :root { --bg:#0b1220; --fg:#e8f0ff }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family: ui-serif, Georgia, "Noto Serif TC", serif;transition: background-color .6s ease, color .6s ease}
+    .stage{min-height:100%;display:grid;place-items:center;padding:8vh 6vw;cursor:pointer;position:relative}
+    .card{max-width:900px}
+    .content{font-size:clamp(18px, 4.8vw, 42px);line-height:1.6;letter-spacing:.2px;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;hyphens:auto}
+    .source{margin-top:2.2rem;font-size:clamp(12px, 2.2vw, 16px);opacity:.8}
+    .fade{animation:fade .35s ease}
+    @keyframes fade{from{opacity:.1; transform: translateY(6px)} to{opacity:1; transform:none}}
+    @media (max-width:480px){ .content{line-height:1.7} }
+
+    /* 複製按鈕 */
+    .copy-btn{
+      position:fixed;bottom:20px;right:20px;
+      background:rgba(255,255,255,.15);color:var(--fg);
+      border:none;padding:10px 16px;border-radius:8px;
+      font-size:14px;cursor:pointer;
+      backdrop-filter: blur(6px);
+      transition: background .3s ease;
+    }
+    .copy-btn:hover{background:rgba(255,255,255,.3)}
+  </style>
+</head>
+<body>
+  <main class="stage" id="stage" aria-live="polite" title="點一下換一句">
+    <article class="card">
+      <div id="content" class="content fade">載入中…</div>
+      <div id="source" class="source">—</div>
+    </article>
+  </main>
+  <button class="copy-btn" id="copyBtn" title="複製這段文字">複製</button>
+
+  <script>
+  const PALETTES = [
+    ['#0B1220','#E8F0FF'], ['#111827','#F5F3FF'], ['#0F172A','#FDE68A'], ['#1F2937','#A7F3D0'],
+    ['#0B0F19','#FECACA'], ['#1C1917','#FDE68A'], ['#0B1220','#BEE3F8'], ['#111827','#FCA5A5'],
+    ['#0F172A','#C7D2FE'], ['#111827','#D1FAE5'], ['#0B1220','#FBCFE8'], ['#052E2B','#D1FAE5'],
+    ['#1E1B4B','#E0E7FF'], ['#0F172A','#FFE4E6'], ['#0C111D','#F1F5F9'], ['#0D1B2A','#E0FBFC'],
+    ['#2D1B3D','#FDE2FF'], ['#1E293B','#F8FAFC'], ['#0B1026','#E9D5FF'], ['#1B1A17','#FFF3B0'],
+    ['#102A43','#DCEEFB'], ['#14213D','#FCA311'], ['#1A1B27','#ADE1FF'], ['#0A192F','#CCD6F6']
+  ];
+
+  const $ = sel => document.querySelector(sel);
+  let jokes = [], idx = -1, lastPalette = -1;
+
+  async function loadJokes(){
+    try{
+      const r = await fetch('./jokes.json?v=' + Date.now(), {cache:'no-store'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+      return Array.isArray(j) ? j : (Array.isArray(j.items) ? j.items : []);
+    }catch(e){
+      console.error('[jokes] 載入失敗', e);
+      return [];
+    }
+  }
+
+  function nextIndex(){
+    if(jokes.length===0) return -1;
+    let n; do { n = Math.floor(Math.random()*jokes.length); } while(jokes.length>1 && n===idx);
+    return n;
+  }
+
+  function pickPalette(){
+    let i;
+    do { i = Math.floor(Math.random()*PALETTES.length); } while(PALETTES.length>1 && i===lastPalette);
+    lastPalette = i; const p = PALETTES[i];
+    document.documentElement.style.setProperty('--bg', p[0]);
+    document.documentElement.style.setProperty('--fg', p[1]);
+  }
+
+  function baseFontByLength(len){
+    if(len < 40) return 'clamp(28px, 6vw, 56px)';
+    if(len < 120) return 'clamp(22px, 5vw, 40px)';
+    if(len < 280) return 'clamp(18px, 4.6vw, 32px)';
+    return 'clamp(16px, 4vw, 28px)';
+  }
+
+  function fitToContainer(el){
+    const maxIterations = 40;
+    const paddingRatio = 0.92;
+    let size = parseFloat(getComputedStyle(el).fontSize) || 20;
+    let i = 0;
+    const container = el.parentElement;
+    const maxPx = 56;
+    const minPx = 14;
+
+    while(i++ < maxIterations){
+      const ok = el.scrollHeight <= container.clientHeight * paddingRatio;
+      if(ok) break;
+      size = Math.max(minPx, size - 1);
+      el.style.fontSize = size + 'px';
+    }
+
+    if(el.scrollHeight < container.clientHeight * 0.7){
+      let j = 0;
+      while(j++ < 10 && size < maxPx){
+        size += 1;
+        el.style.fontSize = size + 'px';
+        if(el.scrollHeight > container.clientHeight * paddingRatio){
+          size -= 1;
+          el.style.fontSize = size + 'px';
+          break;
+        }
+      }
+    }
+  }
+
+  function show(i){
+    const contentEl = $('#content');
+    const sourceEl = $('#source');
+
+    if(i<0){
+      contentEl.textContent = '無法讀取資料';
+      sourceEl.textContent = '—';
+      pickPalette();
+      return;
+    }
+
+    const {content, source} = jokes[i];
+    contentEl.classList.remove('fade'); void contentEl.offsetWidth; contentEl.classList.add('fade');
+    contentEl.textContent = content || '';
+
+    const len = contentEl.textContent.length;
+    contentEl.style.fontSize = '';
+    contentEl.style.setProperty('font-size', baseFontByLength(len));
+    requestAnimationFrame(()=> fitToContainer(contentEl));
+
+    sourceEl.textContent = source ? `— ${source}` : '—';
+    pickPalette();
+    idx = i;
+  }
+
+  async function init(){
+    jokes = await loadJokes();
+    show(nextIndex());
+  }
+
+  $('#stage').addEventListener('click', ()=> show(nextIndex()));
+  window.addEventListener('keydown', (e)=>{
+    if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if(e.key===' ' || e.key==='Enter') { e.preventDefault(); show(nextIndex()); }
+  });
+
+  let resizeTimer;
+  window.addEventListener('resize', ()=>{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(()=>{
+      const contentEl = $('#content');
+      const len = contentEl.textContent.length;
+      contentEl.style.setProperty('font-size', baseFontByLength(len));
+      fitToContainer(contentEl);
+    }, 120);
+  });
+
+  // 複製按鈕功能
+  $('#copyBtn').addEventListener('click', async ()=>{
+    const text = $('#content').textContent + "\n" + $('#source').textContent;
+    try{
+      await navigator.clipboard.writeText(text.trim());
+      $('#copyBtn').textContent = '已複製!';
+      setTimeout(()=> $('#copyBtn').textContent = '複製', 1500);
+    }catch(e){
+      alert('無法複製: ' + e);
+    }
+  });
+
+  init();
+  </script>
+</body>
+</html>

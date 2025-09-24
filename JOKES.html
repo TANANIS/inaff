@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jokes JSON Builder｜@@ 分隔版</title>
+  <style>
+    :root{--bg:#0b1220;--fg:#e8f0ff;--muted:#94a3b8;--card:#0f172a;--accent:#60a5fa;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444}
+    *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans TC",sans-serif}
+    .wrap{max-width:1100px;margin-inline:auto;padding:24px}
+    h1{font-size:clamp(20px,2.8vw,28px);margin:0 0 12px}.muted{color:var(--muted)}
+    .row{display:grid;grid-template-columns:1fr;gap:16px}@media(min-width:980px){.row{grid-template-columns:1.1fr .9fr}}
+    .card{background:var(--card);border:1px solid rgba(148,163,184,.24);border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.2)}
+    .card h2{font-size:18px;margin:0 0 8px}.card .inner{padding:16px}
+    textarea{width:100%;min-height:420px;resize:vertical;background:#0b1220;color:var(--fg);border:1px solid rgba(148,163,184,.28);border-radius:12px;padding:12px 12px;line-height:1.6}
+    code,kbd{background:#0b1220;color:#cbd5e1;border:1px solid rgba(148,163,184,.28);border-radius:6px;padding:.15rem .4rem}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}button{appearance:none;border:1px solid rgba(148,163,184,.28);background:#0b1220;color:var(--fg);padding:10px 14px;border-radius:12px;cursor:pointer}button.primary{background:var(--accent);border-color:transparent;color:#0b1220;font-weight:600}button.ok{background:var(--ok);border-color:transparent;color:white}button.warn{background:var(--warn);border-color:transparent;color:#0b1220}button:disabled{opacity:.5;cursor:not-allowed}input[type=file]{display:none}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.opt{display:flex;gap:10px;align-items:center}.opt input[type=checkbox]{width:18px;height:18px}
+    .stat{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;color:#cbd5e1;font-size:14px}
+    .list{max-height:420px;overflow:auto;border:1px solid rgba(148,163,184,.28);border-radius:12px;padding:8px;background:#0b1220}
+    .item{padding:10px 8px;border-bottom:1px dashed rgba(148,163,184,.22)}.item:last-child{border-bottom:none}.src{color:#93c5fd}.err{color:var(--err)}.help{font-size:14px;line-height:1.8}.pill{display:inline-block;border:1px solid rgba(148,163,184,.28);padding:.14rem .5rem;border-radius:999px;margin-right:6px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Jokes JSON Builder <span class="muted">｜使用 <code>@@</code> 分隔</span></h1>
+  <p class="muted">TXT 檔裡用 <code>@@</code> 當作每一則笑話的分隔符號，不再使用空白行。</p>
+
+  <div class="row">
+    <section class="card">
+      <div class="inner">
+        <h2>1) 貼入原始文字或匯入檔案</h2>
+        <div class="controls">
+          <label class="pill" for="file">匯入文字檔</label><input id="file" type="file" accept=".txt,.md,.csv,.tsv,.log" />
+          <button id="example" type="button">貼上範例</button>
+          <button id="clear" type="button">清空</button>
+        </div>
+        <textarea id="raw" placeholder="每一則笑話用 @@ 分隔；若有出處，可用 — 出處 或 | 直管線 分隔。\n\n範例：\n我買了一本『如何解決拖延症』，一直還沒打開。\n— 互聯網\n@@\n便利商店的微波爐不是加熱食物的，是提醒我『不要在店裡吃』的。 | 匿名"></textarea>
+        <div class="row2" style="margin-top:12px">
+          <div class="opt"><input type="checkbox" id="dedup" checked><label for="dedup">去除重複 <span class="muted">（以 <code>content</code> 文字比對）</span></label></div>
+          <div class="opt"><input type="checkbox" id="trim" checked><label for="trim">自動修剪空白與多餘行</label></div>
+        </div>
+        <div class="controls" style="justify-content:flex-end;margin-top:12px">
+          <button id="parse" class="primary" type="button">解析與預覽</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="inner">
+        <h2>2) 預覽輸出（JSON）</h2>
+        <div class="controls">
+          <button id="copy" type="button">複製 JSON</button>
+          <button id="download" class="ok" type="button">下載 jokes.json</button>
+        </div>
+        <textarea id="json" placeholder="這裡會顯示輸出的 JSON" readonly style="min-height:180px"></textarea>
+        <div class="stat" id="stat"></div>
+        <div class="list" id="preview"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = q => document.querySelector(q);
+const rawEl = $('#raw');
+const jsonEl = $('#json');
+const previewEl = $('#preview');
+const statEl = $('#stat');
+
+$('#file').addEventListener('change', async (e)=>{
+  const f = e.target.files?.[0]; if(!f) return;
+  const txt = await f.text(); rawEl.value = txt; parseNow();
+});
+
+$('#example').addEventListener('click', ()=>{
+  rawEl.value = `我買了一本『如何解決拖延症』，一直還沒打開。\n— 互聯網\n@@\n便利商店的微波爐不是加熱食物的，是提醒我『不要在店裡吃』的。 | 匿名\n@@\n隔壁在裝潢，師傅說：『這面牆是裝飾牆。』我問：『那有實用牆嗎？』`; parseNow();
+});
+$('#clear').addEventListener('click', ()=>{ rawEl.value=''; jsonEl.value=''; previewEl.innerHTML=''; statEl.textContent=''; });
+$('#parse').addEventListener('click', parseNow);
+$('#copy').addEventListener('click', async ()=>{ if(!jsonEl.value) return; await navigator.clipboard.writeText(jsonEl.value); flash('已複製'); });
+$('#download').addEventListener('click', ()=>{
+  if(!jsonEl.value) return;
+  const blob = new Blob([jsonEl.value], {type:'application/json'});
+  const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:'jokes.json'});
+  document.body.appendChild(a); a.click(); a.remove();
+});
+
+function flash(msg){ statEl.textContent=msg; setTimeout(()=> statEl.textContent='',1200); }
+
+function parseNow(){
+  const opts = { dedup: $('#dedup').checked, trim: $('#trim').checked };
+  const text = rawEl.value.replace(/\r\n?/g,'\n');
+  let blocks = text.split(/@@/g).map(s=> s.trim()).filter(Boolean);
+
+  let items = [];
+  for(const b of blocks){
+    let source = '';
+    let content = b;
+
+    // 直管線分隔：內容 | 出處
+    const pipe = b.match(/^[\s\S]*?\s\|\s([\s\S]+)$/);
+    if(pipe){
+      const i = b.lastIndexOf('|');
+      content = b.slice(0,i).trim();
+      source = b.slice(i+1).trim();
+    } else {
+      // 尾行帶 —/來源：/作者：
+      const lines = b.split('\n');
+      const last = lines[lines.length-1].trim();
+      const mDash = last.match(/^—\s*(.+)$/);
+      const mSrc  = last.match(/^(來源|出處|作者)[:：]\s*(.+)$/);
+      if(mDash){ source=mDash[1].trim(); content=lines.slice(0,-1).join('\n').trim(); }
+      else if(mSrc){ source=mSrc[2].trim(); content=lines.slice(0,-1).join('\n').trim(); }
+    }
+
+    if(opts.trim){ content=content.replace(/\n{3,}/g,'\n\n').trim(); source=source.trim(); }
+    if(!content) continue;
+    items.push({content, source});
+  }
+
+  if(opts.dedup){
+    const seen=new Set();
+    items=items.filter(it=>{const key=it.content;if(seen.has(key))return false;seen.add(key);return true;});
+  }
+
+  const json = JSON.stringify(items,null,2);
+  jsonEl.value=json;
+  previewEl.innerHTML=items.map((it,i)=>`<div class="item"><div><strong>#${i+1}</strong></div><div>${escapeHtml(it.content).replace(/\n/g,'<br>')}</div><div class="src">${it.source? '— '+escapeHtml(it.source):'—'}</div></div>`).join('');
+  statEl.innerHTML=`<span>總數：<strong>${items.length}</strong></span>`+(opts.dedup?`<span>已去重</span>`:'');
+}
+
+function escapeHtml(s){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[m]);}
+</script>
+</body>
+</html>
